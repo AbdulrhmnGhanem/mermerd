@@ -129,6 +129,7 @@ func TestDatabaseIntegrations(t *testing.T) {
 						{Schema: schema, Name: "test_not_unique_constraint_name_a"},
 						{Schema: schema, Name: "test_not_unique_constraint_name_b"},
 						{Schema: schema, Name: "test_not_unique_constraint_name_c"},
+						{Schema: schema, Name: "tenants"},
 					}...)
 				}
 
