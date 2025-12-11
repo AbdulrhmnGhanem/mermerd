@@ -319,6 +319,7 @@ func TestDatabaseIntegrations(t *testing.T) {
 							{Schema: testCase.schema, Name: "test_not_unique_constraint_name_a"},
 							{Schema: testCase.schema, Name: "test_not_unique_constraint_name_b"},
 							{Schema: testCase.schema, Name: "test_not_unique_constraint_name_c"},
+							{Schema: testCase.schema, Name: "tenants"},
 						}...)
 					}
 
@@ -361,6 +362,113 @@ func TestDatabaseIntegrations(t *testing.T) {
 						assert.Equal(t, constraintResults[0].FkSchema, "other_db")
 						assert.Equal(t, constraintResults[0].PkTable, "test_3_a")
 						assert.Equal(t, constraintResults[0].PkSchema, testCase.schema)
+					}
+				})
+			})
+
+			t.Run("Schema with hyphen (special characters)", func(t *testing.T) {
+				if testCase.dbType != Postgres {
+					t.Skip("Test specific to Postgres")
+				}
+
+				connector := getConnectionAndConnect(t)
+
+				t.Run("GetTables with hyphenated schema", func(t *testing.T) {
+					// Arrange
+					hyphenSchema := "tenant-alfa"
+					schemas := []string{testCase.schema, hyphenSchema}
+
+					// Act
+					tables, err := connector.GetTables(schemas)
+
+					// Assert
+					assert.Nil(t, err)
+					// Check that tables from hyphenated schema are included
+					expectedHyphenTables := []TableDetail{
+						{Schema: hyphenSchema, Name: "users"},
+						{Schema: hyphenSchema, Name: "refresh_tokens"},
+						{Schema: hyphenSchema, Name: "tenant_configs"},
+					}
+					for _, expectedTable := range expectedHyphenTables {
+						assert.Contains(t, tables, expectedTable, "Expected table %s.%s to be present", expectedTable.Schema, expectedTable.Name)
+					}
+				})
+
+				t.Run("GetColumns with hyphenated schema", func(t *testing.T) {
+					// Arrange
+					tableName := TableDetail{Schema: "tenant-alfa", Name: "users"}
+
+					// Act
+					columns, err := connector.GetColumns(tableName)
+
+					// Assert
+					assert.Nil(t, err)
+					assert.Len(t, columns, 2)
+					if len(columns) >= 2 {
+						assert.Equal(t, "id", columns[0].Name)
+						assert.True(t, columns[0].IsPrimary)
+						assert.Equal(t, "name", columns[1].Name)
+						assert.False(t, columns[1].IsPrimary)
+					}
+				})
+
+				t.Run("GetConstraints same-schema FK", func(t *testing.T) {
+					// Arrange
+					tableName := TableDetail{Schema: "tenant-alfa", Name: "refresh_tokens"}
+
+					// Act
+					constraintResults, err := connector.GetConstraints(tableName)
+
+					// Assert
+					assert.Nil(t, err)
+					assert.NotEmpty(t, constraintResults)
+					
+					// Find the FK constraint (not the PK)
+					var fkConstraint *ConstraintResult
+					for i := range constraintResults {
+						if !constraintResults[i].IsPrimary {
+							fkConstraint = &constraintResults[i]
+							break
+						}
+					}
+					
+					assert.NotNil(t, fkConstraint, "Should have found a foreign key constraint")
+					if fkConstraint != nil {
+						assert.Equal(t, "refresh_tokens", fkConstraint.FkTable)
+						assert.Equal(t, "tenant-alfa", fkConstraint.FkSchema)
+						assert.Equal(t, "users", fkConstraint.PkTable)
+						assert.Equal(t, "tenant-alfa", fkConstraint.PkSchema)
+						assert.Equal(t, "user_id", fkConstraint.ColumnName)
+					}
+				})
+
+				t.Run("GetConstraints cross-schema FK", func(t *testing.T) {
+					// Arrange
+					tableName := TableDetail{Schema: "tenant-alfa", Name: "tenant_configs"}
+
+					// Act
+					constraintResults, err := connector.GetConstraints(tableName)
+
+					// Assert
+					assert.Nil(t, err)
+					assert.NotEmpty(t, constraintResults)
+					
+					// Find the FK constraint (not the PK)
+					var fkConstraint *ConstraintResult
+					for i := range constraintResults {
+						if !constraintResults[i].IsPrimary {
+							fkConstraint = &constraintResults[i]
+							break
+						}
+					}
+					
+					assert.NotNil(t, fkConstraint, "Should have found a foreign key constraint")
+					if fkConstraint != nil {
+						assert.Equal(t, "tenant_configs", fkConstraint.FkTable)
+						assert.Equal(t, "tenant-alfa", fkConstraint.FkSchema)
+						assert.Equal(t, "tenants", fkConstraint.PkTable)
+						assert.Equal(t, testCase.schema, fkConstraint.PkSchema)
+						assert.Equal(t, "tenant_id", fkConstraint.ColumnName)
 					}
 				})
 			})
